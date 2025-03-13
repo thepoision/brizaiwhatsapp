@@ -253,23 +253,20 @@ class ConversationService {
         reasonForVisit: context.patientData.reasonForVisit
       };
       
-      // Get the first question from the array of generated questions
-      const questions = await this.geminiService.generateFollowUpQuestions(patientInfo);
-      const firstQuestion = questions[0];
-      const question = firstQuestion.question;
-      const options = firstQuestion.options;
+      // Get first follow-up question
+      const followUpQuestion = await this.geminiService.getFollowUpQuestion(patientInfo, 0);
       
       // Store the current question
-      context.currentQuestion = question;
-      context.questionOptions = options;
+      context.currentQuestion = followUpQuestion.question;
+      context.questionOptions = followUpQuestion.options;
       
       // Format options for display
-      const formattedOptions = options.map((option, index) => 
+      const formattedOptions = followUpQuestion.options.map((option, index) => 
         `${index + 1}. ${option}`
       ).join('\\n');
       
       return {
-        message: `${question}\\n\\nPlease select an option by typing the number:\\n${formattedOptions}`,
+        message: `${followUpQuestion.question}\\n\\nPlease select an option by typing the number:\\n${formattedOptions}`,
         currentState: CONVERSATION_STATES.ANSWERING_QUESTIONS
       };
     } catch (error) {
@@ -331,20 +328,19 @@ class ConversationService {
           responses: context.patientData.responses
         };
         
-        const questions = await this.geminiService.generateFollowUpQuestions(patientInfo);
-        const { question, options } = questions[0];
+        const followUpQuestion = await this.geminiService.getFollowUpQuestion(patientInfo, context.patientData.responses.length);
         
         // Store the current question
-        context.currentQuestion = question;
-        context.questionOptions = options;
+        context.currentQuestion = followUpQuestion.question;
+        context.questionOptions = followUpQuestion.options;
         
         // Format options for display
-        const formattedOptions = options.map((option, index) => 
+        const formattedOptions = followUpQuestion.options.map((option, index) => 
           `${index + 1}. ${option}`
         ).join('\\n');
         
         return {
-          message: `${question}\\n\\nPlease select an option by typing the number:\\n${formattedOptions}`,
+          message: `${followUpQuestion.question}\\n\\nPlease select an option by typing the number:\\n${formattedOptions}`,
           currentState: CONVERSATION_STATES.ANSWERING_QUESTIONS
         };
       }
