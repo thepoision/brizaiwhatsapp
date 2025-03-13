@@ -253,7 +253,7 @@ class ConversationService {
         reasonForVisit: context.patientData.reasonForVisit
       };
       
-      const { question, options } = await this.geminiService.generateFollowUpQuestion(patientInfo);
+      const { question, options } = await this.geminiService.generateFollowUpQuestions(patientInfo)[0];
       
       // Store the current question
       context.currentQuestion = question;
@@ -327,7 +327,7 @@ class ConversationService {
           responses: context.patientData.responses
         };
         
-        const { question, options } = await this.geminiService.generateFollowUpQuestion(patientInfo);
+        const { question, options } = await this.geminiService.generateFollowUpQuestions(patientInfo)[0];
         
         // Store the current question
         context.currentQuestion = question;
