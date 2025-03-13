@@ -253,7 +253,11 @@ class ConversationService {
         reasonForVisit: context.patientData.reasonForVisit
       };
       
-      const { question, options } = await this.geminiService.generateFollowUpQuestions(patientInfo)[0];
+      // Get the first question from the array of generated questions
+      const questions = await this.geminiService.generateFollowUpQuestions(patientInfo);
+      const firstQuestion = questions[0];
+      const question = firstQuestion.question;
+      const options = firstQuestion.options;
       
       // Store the current question
       context.currentQuestion = question;
@@ -327,7 +331,8 @@ class ConversationService {
           responses: context.patientData.responses
         };
         
-        const { question, options } = await this.geminiService.generateFollowUpQuestions(patientInfo)[0];
+        const questions = await this.geminiService.generateFollowUpQuestions(patientInfo);
+        const { question, options } = questions[0];
         
         // Store the current question
         context.currentQuestion = question;
