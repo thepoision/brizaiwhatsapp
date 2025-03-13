@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
 
 /**
  * Service for interacting with Google's Gemini AI model
@@ -8,7 +8,32 @@ class GeminiService {
     // Initialize the Gemini API client
     const apiKey = process.env.GEMINI_API_KEY;
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = 'gemini-pro';
+    
+    // Define schema for structured response
+    this.schema = {
+      description: "List of Questions",
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          question: {
+            type: SchemaType.STRING,
+            description: "Question to ask the patient",
+            nullable: false,
+          },
+          options: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.STRING,
+              description: "Possible answer option",
+            },
+            description: "Possible options for the question",
+            nullable: false,
+          },
+        },
+        required: ["question", "options"],
+      },
+    };
     
     // Default questions to use as fallback if AI fails
     this.defaultQuestions = [
@@ -33,7 +58,14 @@ class GeminiService {
    */
   getModel() {
     try {
-      return this.genAI.getGenerativeModel({ model: this.modelName });
+      return this.genAI.getGenerativeModel({
+        model: "gemini-2.0-flash", // Upgraded to newer model
+        systemInstruction: `You are a medical assistant helping with patient intake. Generate follow-up questions with multiple-choice options based on the patient information provided. Each question should help gather more medical details relevant to the patient's condition. Return a JSON array where each individual element is an object containing exactly two keys: "question" and "options", where options is an array of strings representing possible answer choices.`,
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: this.schema
+        }
+      });
     } catch (error) {
       console.error('Error getting Gemini model:', error);
       throw new Error('Failed to initialize Gemini AI model');
@@ -57,9 +89,7 @@ class GeminiService {
       
       // Create prompt with context
       const prompt = `
-        You are a medical assistant helping with patient intake. 
-        Generate 3 follow-up questions with multiple-choice options based on the following patient information:
-        
+        Patient Information:
         Name: ${patientData.name || 'Unknown'}
         Age: ${patientData.age || 'Unknown'}
         Gender: ${patientData.gender || 'Unknown'}
@@ -67,16 +97,7 @@ class GeminiService {
         
         ${patientData.responses ? 'Previous responses: ' + JSON.stringify(patientData.responses) : ''}
         
-        Format your response as a valid JSON array containing exactly 3 objects. Each object must have a "question" field and an "options" array field.
-        Example format:
-        [
-          {
-            "question": "How long have you been experiencing these symptoms?",
-            "options": ["Less than a week", "1-2 weeks", "More than 2 weeks", "More than a month"]
-          }
-        ]
-        
-        Do not include any additional text, only return the JSON array.
+        Based on this information, generate 3 relevant follow-up questions with 4 multiple-choice options each.
       `;
 
       const result = await model.generateContent(prompt);
@@ -86,43 +107,18 @@ class GeminiService {
         return this.defaultQuestions;
       }
       
-      const response = result.response;
-      const textResponse = response.text();
-      
-      if (!textResponse) {
-        console.warn('Empty text response from Gemini');
-        return this.defaultQuestions;
-      }
-      
-      // Extract JSON from text response (may be surrounded by markdown or other text)
-      const jsonMatch = textResponse.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      
-      if (jsonMatch) {
-        try {
-          const jsonText = jsonMatch[0];
-          const parsedQuestions = JSON.parse(jsonText);
-          
-          // Validate the parsed questions
-          if (Array.isArray(parsedQuestions) && parsedQuestions.length > 0) {
-            const validQuestions = parsedQuestions.filter(q => 
-              q && typeof q.question === 'string' && 
-              Array.isArray(q.options) && q.options.length > 0
-            );
-            
-            if (validQuestions.length > 0) {
-              return validQuestions;
-            }
-          }
-          
-          console.warn('Parsed questions did not match expected format:', parsedQuestions);
-          return this.defaultQuestions;
-        } catch (parseError) {
-          console.error('Error parsing JSON from Gemini response:', parseError);
-          console.debug('Response that failed to parse:', textResponse);
+      // Parse the response - should be direct JSON
+      try {
+        const responseJson = JSON.parse(result.response.text());
+        if (Array.isArray(responseJson) && responseJson.length > 0) {
+          return responseJson;
+        } else {
+          console.warn('Invalid response format from Gemini');
           return this.defaultQuestions;
         }
-      } else {
-        console.error('Failed to parse AI response into JSON:', textResponse);
+      } catch (parseError) {
+        console.error('Error parsing JSON from Gemini response:', parseError);
+        console.debug('Response that failed to parse:', result.response.text());
         return this.defaultQuestions;
       }
     } catch (error) {
