@@ -8,6 +8,7 @@ class GeminiService {
     // Initialize the Gemini API client
     const apiKey = process.env.GEMINI_API_KEY;
     this.genAI = new GoogleGenerativeAI(apiKey);
+    this.modelName = 'gemini-1.5-flash'; // Updated model name 
     
     // Define schema for structured response
     this.schema = {
@@ -59,7 +60,7 @@ class GeminiService {
   getModel() {
     try {
       return this.genAI.getGenerativeModel({
-        model: "gemini-2.0-flash", // Upgraded to newer model
+        model: this.modelName,
         systemInstruction: `You are a medical assistant helping with patient intake. Generate follow-up questions with multiple-choice options based on the patient information provided. Each question should help gather more medical details relevant to the patient's condition. Return a JSON array where each individual element is an object containing exactly two keys: "question" and "options", where options is an array of strings representing possible answer choices.`,
         generationConfig: {
           responseMimeType: "application/json",
@@ -100,6 +101,7 @@ class GeminiService {
         Based on this information, generate 3 relevant follow-up questions with 4 multiple-choice options each.
       `;
 
+      console.log(`Using Gemini model: ${this.modelName}`);
       const result = await model.generateContent(prompt);
       
       if (!result || !result.response) {
@@ -109,7 +111,10 @@ class GeminiService {
       
       // Parse the response - should be direct JSON
       try {
-        const responseJson = JSON.parse(result.response.text());
+        const responseText = result.response.text();
+        console.log('Gemini raw response:', responseText);
+        const responseJson = JSON.parse(responseText);
+        
         if (Array.isArray(responseJson) && responseJson.length > 0) {
           return responseJson;
         } else {
