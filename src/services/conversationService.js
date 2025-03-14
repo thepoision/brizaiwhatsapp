@@ -4,6 +4,7 @@ const PatientService = require('./patientService');
 // Conversation states
 const CONVERSATION_STATES = {
   INITIAL: 'INITIAL',
+  LANGUAGE_SELECTION: 'LANGUAGE_SELECTION',
   DOCTOR_CODE: 'DOCTOR_CODE',
   CONFIRM_DOCTOR: 'CONFIRM_DOCTOR',
   PATIENT_NAME: 'PATIENT_NAME',
@@ -73,6 +74,10 @@ class ConversationService {
         response = this.handleInitialState(message, context);
         break;
         
+      case CONVERSATION_STATES.LANGUAGE_SELECTION:
+        response = this.handleLanguageSelectionState(message, context);
+        break;
+        
       case CONVERSATION_STATES.DOCTOR_CODE:
         response = await this.handleDoctorCodeState(message, context);
         break;
@@ -122,13 +127,96 @@ class ConversationService {
   }
 
   /**
-   * Handle the initial greeting state
+   * Handle the initial state
    */
   handleInitialState(message, context) {
+    // Create language selection buttons
+    const languageOptions = [
+      { id: 'english', title: 'English' },
+      { id: 'hindi', title: 'हिंदी (Hindi)' },
+      { id: 'marathi', title: 'मराठी (Marathi)' },
+      { id: 'tamil', title: 'தமிழ் (Tamil)' },
+      { id: 'telugu', title: 'తెలుగు (Telugu)' },
+      { id: 'kannada', title: 'ಕನ್ನಡ (Kannada)' }
+    ];
+    
+    const buttons = languageOptions.map(option => ({
+      type: 'reply',
+      reply: {
+        id: option.id,
+        title: option.title
+      }
+    }));
+    
     return {
-      message: "Welcome to OPPD WhatsApp Consultation Service! Please enter your doctor's code to schedule a consultation.",
-      currentState: CONVERSATION_STATES.DOCTOR_CODE
+      message: "Welcome to OPPD WhatsApp Consultation Service! Please select your preferred language:",
+      currentState: CONVERSATION_STATES.LANGUAGE_SELECTION,
+      interactive: {
+        type: 'button',
+        body: {
+          text: "Select your preferred language / अपनी पसंदीदा भाषा चुनें / आपली प्राधान्य भाषा निवडा / உங்கள் விருப்பமான மொழியைத் தேர்ந்தெடுக்கவும் / మీకు నచ్చిన భాషను ఎంచుకోండి / ನಿಮ್ಮ ಆದ್ಯತೆಯ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ"
+        },
+        action: {
+          buttons
+        }
+      }
     };
+  }
+
+  /**
+   * Handle the language selection state
+   */
+  handleLanguageSelectionState(language, context) {
+    // Store the selected language in the context
+    const languageMap = {
+      'english': 'English',
+      'hindi': 'Hindi',
+      'marathi': 'Marathi',
+      'tamil': 'Tamil',
+      'telugu': 'Telugu',
+      'kannada': 'Kannada'
+    };
+    
+    // Check if the incoming message is a valid language selection
+    const selectedLanguage = language.toLowerCase();
+    if (Object.keys(languageMap).includes(selectedLanguage)) {
+      // Save the language preference to the context
+      if (!context.patientData) {
+        context.patientData = {};
+      }
+      context.patientData.language = languageMap[selectedLanguage];
+      
+      // Generate response based on the selected language
+      let message = "";
+      switch (selectedLanguage) {
+        case 'hindi':
+          message = "आपने हिंदी चुनी है। कृपया अपना डॉक्टर कोड दर्ज करें:";
+          break;
+        case 'marathi':
+          message = "तुम्ही मराठी निवडली आहे. कृपया तुमचा डॉक्टर कोड प्रविष्ट करा:";
+          break;
+        case 'tamil':
+          message = "நீங்கள் தமிழைத் தேர்ந்தெடுத்துள்ளீர்கள். உங்கள் மருத்துவர் குறியீட்டை உள்ளிடவும்:";
+          break;
+        case 'telugu':
+          message = "మీరు తెలుగును ఎంచుకున్నారు. దయచేసి మీ డాక్టర్ కోడ్‌ని నమోదు చేయండి:";
+          break;
+        case 'kannada':
+          message = "ನೀವು ಕನ್ನಡವನ್ನು ಆಯ್ಕೆ ಮಾಡಿದ್ದೀರಿ. ದಯವಿಟ್ಟು ನಿಮ್ಮ ವೈದ್ಯರ ಕೋಡ್ ನಮೂದಿಸಿ:";
+          break;
+        case 'english':
+        default:
+          message = "You have selected English. Please enter your doctor's code:";
+      }
+      
+      return {
+        message,
+        currentState: CONVERSATION_STATES.DOCTOR_CODE
+      };
+    } else {
+      // If invalid language selection, prompt again
+      return this.handleInitialState("", context);
+    }
   }
 
   /**
@@ -245,12 +333,18 @@ class ConversationService {
     context.patientData.reasonForVisit = reason;
     
     try {
+      // Ensure responses array is initialized
+      if (!context.patientData.responses) {
+        context.patientData.responses = [];
+      }
+      
       // Generate follow-up questions using Gemini
       const patientInfo = {
         name: context.patientData.name,
         age: context.patientData.age,
         gender: context.patientData.gender,
-        reasonForVisit: context.patientData.reasonForVisit
+        reasonForVisit: context.patientData.reasonForVisit,
+        language: context.patientData.language // Pass the language to Gemini
       };
       
       // Get first follow-up question
@@ -260,14 +354,27 @@ class ConversationService {
       context.currentQuestion = followUpQuestion.question;
       context.questionOptions = followUpQuestion.options;
       
-      // Format options for display
-      const formattedOptions = followUpQuestion.options.map((option, index) => 
-        `${index + 1}. ${option}`
-      ).join('\\n');
+      // Create clickable buttons for the options
+      const buttons = followUpQuestion.options.map((option, index) => ({
+        type: 'reply',
+        reply: {
+          id: `option_${index + 1}`,
+          title: option.length > 20 ? option.substring(0, 19) + '...' : option // Ensure button text fits within WhatsApp limits
+        }
+      }));
       
       return {
-        message: `${followUpQuestion.question}\\n\\nPlease select an option by typing the number:\\n${formattedOptions}`,
-        currentState: CONVERSATION_STATES.ANSWERING_QUESTIONS
+        message: followUpQuestion.question,
+        currentState: CONVERSATION_STATES.ANSWERING_QUESTIONS,
+        interactive: {
+          type: 'button',
+          body: {
+            text: followUpQuestion.question
+          },
+          action: {
+            buttons: buttons.slice(0, 3) // WhatsApp has a limit of 3 buttons per message
+          }
+        }
       };
     } catch (error) {
       console.error('Error generating follow-up questions:', error);
@@ -282,26 +389,40 @@ class ConversationService {
    * Handle the answering questions state
    */
   async handleAnsweringQuestionsState(answer, context) {
-    // Parse the answer (either as a number or the full text)
+    // Parse the answer (either as a number, option_X identifier, or the full text)
     let selectedOption;
-    const answerNum = parseInt(answer);
     
-    if (!isNaN(answerNum) && answerNum > 0 && answerNum <= context.questionOptions.length) {
-      // User answered with a number
-      selectedOption = context.questionOptions[answerNum - 1];
+    // Check if this is a button response with option_X format
+    if (answer.startsWith('option_')) {
+      const optionNum = parseInt(answer.replace('option_', '')) - 1;
+      if (!isNaN(optionNum) && optionNum >= 0 && optionNum < context.questionOptions.length) {
+        selectedOption = context.questionOptions[optionNum];
+      }
     } else {
-      // User might have typed the full answer
-      selectedOption = context.questionOptions.find(option => 
-        option.toLowerCase() === answer.toLowerCase()
-      );
+      // Try to parse as a direct number input
+      const answerNum = parseInt(answer);
       
-      // If we didn't find an exact match, default to storing their exact response
-      if (!selectedOption) {
-        selectedOption = answer;
+      if (!isNaN(answerNum) && answerNum > 0 && answerNum <= context.questionOptions.length) {
+        // User answered with a number
+        selectedOption = context.questionOptions[answerNum - 1];
+      } else {
+        // User might have typed the full answer
+        selectedOption = context.questionOptions.find(option => 
+          option.toLowerCase() === answer.toLowerCase()
+        );
+        
+        // If we didn't find an exact match, default to storing their exact response
+        if (!selectedOption) {
+          selectedOption = answer;
+        }
       }
     }
     
     // Store question and answer
+    if (!context.patientData.responses) {
+      context.patientData.responses = [];
+    }
+    
     context.patientData.responses.push({
       question: context.currentQuestion,
       answer: selectedOption
@@ -314,8 +435,23 @@ class ConversationService {
         // We've asked enough questions, complete the consultation
         await this.completeConsultation(context);
         
+        // Get appropriate message based on language
+        let message = `Thank you for providing all the information. Your consultation with Dr. ${context.patientData.doctorName} has been scheduled. You will receive confirmation details shortly.`;
+        
+        if (context.patientData.language === 'Hindi') {
+          message = `सभी जानकारी प्रदान करने के लिए धन्यवाद। डॉ. ${context.patientData.doctorName} के साथ आपका परामर्श निर्धारित किया गया है। आपको जल्द ही पुष्टिकरण विवरण प्राप्त होगा।`;
+        } else if (context.patientData.language === 'Marathi') {
+          message = `सर्व माहिती दिल्याबद्दल धन्यवाद. डॉ. ${context.patientData.doctorName} सोबत तुमचा सल्लामसलत निश्चित केला आहे. तुम्हाला लवकरच पुष्टीकरणाचा तपशील मिळेल.`;
+        } else if (context.patientData.language === 'Tamil') {
+          message = `அனைத்து தகவல்களையும் வழங்கியதற்கு நன்றி. டாக்டர் ${context.patientData.doctorName} உடனான உங்கள் ஆலோசனை திட்டமிடப்பட்டுள்ளது. விரைவில் உறுதிப்படுத்தல் விவரங்களைப் பெறுவீர்கள்.`;
+        } else if (context.patientData.language === 'Telugu') {
+          message = `అన్ని సమాచారాన్ని అందించినందుకు ధన్యవాదాలు. డాక్టర్ ${context.patientData.doctorName} తో మీ సంప్రదింపులు షెడ్యూల్ చేయబడ్డాయి. మీరు త్వరలో నిర్ధారణ వివరాలను పొందుతారు.`;
+        } else if (context.patientData.language === 'Kannada') {
+          message = `ಎಲ್ಲಾ ಮಾಹಿತಿಯನ್ನು ಒದಗಿಸಿದ್ದಕ್ಕಾಗಿ ಧನ್ಯವಾದಗಳು. ಡಾ. ${context.patientData.doctorName} ರವರೊಂದಿಗೆ ನಿಮ್ಮ ಸಮಾಲೋಚನೆಯನ್ನು ನಿಗದಿಪಡಿಸಲಾಗಿದೆ. ನೀವು ಶೀಘ್ರದಲ್ಲೇ ದೃಢೀಕರಣ ವಿವರಗಳನ್ನು ಪಡೆಯುತ್ತೀರಿ.`;
+        }
+        
         return {
-          message: `Thank you for providing all the information. Your consultation with Dr. ${context.patientData.doctorName} has been scheduled. You will receive confirmation details shortly.`,
+          message: message,
           currentState: CONVERSATION_STATES.COMPLETED
         };
       } else {
@@ -325,7 +461,8 @@ class ConversationService {
           age: context.patientData.age,
           gender: context.patientData.gender,
           reasonForVisit: context.patientData.reasonForVisit,
-          responses: context.patientData.responses
+          responses: context.patientData.responses,
+          language: context.patientData.language // Pass the language to Gemini
         };
         
         const followUpQuestion = await this.geminiService.getFollowUpQuestion(patientInfo, context.patientData.responses.length);
@@ -334,14 +471,27 @@ class ConversationService {
         context.currentQuestion = followUpQuestion.question;
         context.questionOptions = followUpQuestion.options;
         
-        // Format options for display
-        const formattedOptions = followUpQuestion.options.map((option, index) => 
-          `${index + 1}. ${option}`
-        ).join('\\n');
+        // Create clickable buttons for the options
+        const buttons = followUpQuestion.options.map((option, index) => ({
+          type: 'reply',
+          reply: {
+            id: `option_${index + 1}`,
+            title: option.length > 20 ? option.substring(0, 19) + '...' : option
+          }
+        }));
         
         return {
-          message: `${followUpQuestion.question}\\n\\nPlease select an option by typing the number:\\n${formattedOptions}`,
-          currentState: CONVERSATION_STATES.ANSWERING_QUESTIONS
+          message: followUpQuestion.question,
+          currentState: CONVERSATION_STATES.ANSWERING_QUESTIONS,
+          interactive: {
+            type: 'button',
+            body: {
+              text: followUpQuestion.question
+            },
+            action: {
+              buttons: buttons.slice(0, 3) // WhatsApp has a limit of 3 buttons per message
+            }
+          }
         };
       }
     } catch (error) {
@@ -350,8 +500,23 @@ class ConversationService {
       // In case of error, we'll complete the consultation with what we have
       await this.completeConsultation(context);
       
+      // Get appropriate message based on language
+      let message = "Thank you for providing the information. Your consultation has been scheduled. You will receive confirmation details shortly.";
+      
+      if (context.patientData.language === 'Hindi') {
+        message = "जानकारी प्रदान करने के लिए धन्यवाद। आपका परामर्श निर्धारित किया गया है। आपको जल्द ही पुष्टिकरण विवरण प्राप्त होगा।";
+      } else if (context.patientData.language === 'Marathi') {
+        message = "माहिती दिल्याबद्दल धन्यवाद. तुमचा सल्लामसलत निश्चित केला आहे. तुम्हाला लवकरच पुष्टीकरणाचा तपशील मिळेल.";
+      } else if (context.patientData.language === 'Tamil') {
+        message = "தகவல்களை வழங்கியதற்கு நன்றி. உங்கள் ஆலோசனை திட்டமிடப்பட்டுள்ளது. விரைவில் உறுதிப்படுத்தல் விவரங்களைப் பெறுவீர்கள்.";
+      } else if (context.patientData.language === 'Telugu') {
+        message = "సమాచారాన్ని అందించినందుకు ధన్యవాదాలు. మీ సంప్రదింపులు షెడ్యూల్ చేయబడ్డాయి. మీరు త్వరలో నిర్ధారణ వివరాలను పొందుతారు.";
+      } else if (context.patientData.language === 'Kannada') {
+        message = "ಮಾಹಿತಿಯನ್ನು ಒದಗಿಸಿದ್ದಕ್ಕಾಗಿ ಧನ್ಯವಾದಗಳು. ನಿಮ್ಮ ಸಮಾಲೋಚನೆಯನ್ನು ನಿಗದಿಪಡಿಸಲಾಗಿದೆ. ನೀವು ಶೀಘ್ರದಲ್ಲೇ ದೃಢೀಕರಣ ವಿವರಗಳನ್ನು ಪಡೆಯುತ್ತೀರಿ.";
+      }
+      
       return {
-        message: "Thank you for providing the information. Your consultation has been scheduled. You will receive confirmation details shortly.",
+        message: message,
         currentState: CONVERSATION_STATES.COMPLETED
       };
     }

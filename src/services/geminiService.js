@@ -10,6 +10,19 @@ class GeminiService {
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.modelName = 'gemini-2.0-flash'; // Using the faster model from the shared example
     
+    // Default language if none specified
+    this.defaultLanguage = "English";
+    
+    // Language support mapping for Gemini model
+    this.supportedLanguages = {
+      "English": "English",
+      "Hindi": "Hindi",
+      "Marathi": "Marathi",
+      "Tamil": "Tamil",
+      "Telugu": "Telugu",
+      "Kannada": "Kannada"
+    };
+    
     // Default questions to use as fallback if AI fails
     this.defaultQuestions = [
       {
@@ -58,6 +71,7 @@ class GeminiService {
       }
 
       const model = this.getModel();
+      const language = patientData.language || this.defaultLanguage;
       
       // Create prompt with context and explicit formatting instructions
       const prompt = `
@@ -69,26 +83,26 @@ class GeminiService {
         
         ${patientData.responses ? 'Previous responses: ' + JSON.stringify(patientData.responses) : ''}
         
-        Based on this information, generate exactly 3 relevant follow-up medical questions. Each question should have 4 multiple-choice options.
+        Based on this information, generate exactly 3 relevant follow-up medical questions in ${language} language. Each question should have 4 multiple-choice options.
         
         The response must be in this exact JSON format:
         [
           {
-            "question": "First question text?",
-            "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
+            "question": "First question text in ${language}?",
+            "options": ["Option 1 in ${language}", "Option 2 in ${language}", "Option 3 in ${language}", "Option 4 in ${language}"]
           },
           {
-            "question": "Second question text?",
-            "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
+            "question": "Second question text in ${language}?",
+            "options": ["Option 1 in ${language}", "Option 2 in ${language}", "Option 3 in ${language}", "Option 4 in ${language}"]
           },
           {
-            "question": "Third question text?",
-            "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
+            "question": "Third question text in ${language}?",
+            "options": ["Option 1 in ${language}", "Option 2 in ${language}", "Option 3 in ${language}", "Option 4 in ${language}"]
           }
         ]
       `;
 
-      console.log(`Using Gemini model: ${this.modelName}`);
+      console.log(`Using Gemini model: ${this.modelName} in ${language}`);
       const result = await model.generateContent(prompt);
       
       if (!result || !result.response) {
