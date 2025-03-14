@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 /**
  * Service for interacting with Google's Gemini AI model
@@ -8,33 +8,7 @@ class GeminiService {
     // Initialize the Gemini API client
     const apiKey = process.env.GEMINI_API_KEY;
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = 'gemini-1.5-flash'; // Updated model name 
-    
-    // Define schema for structured response
-    this.schema = {
-      description: "List of Questions",
-      type: SchemaType.ARRAY,
-      items: {
-        type: SchemaType.OBJECT,
-        properties: {
-          question: {
-            type: SchemaType.STRING,
-            description: "Question to ask the patient",
-            nullable: false,
-          },
-          options: {
-            type: SchemaType.ARRAY,
-            items: {
-              type: SchemaType.STRING,
-              description: "Possible answer option",
-            },
-            description: "Possible options for the question",
-            nullable: false,
-          },
-        },
-        required: ["question", "options"],
-      },
-    };
+    this.modelName = 'gemini-1.5-flash'; // Updated model name
     
     // Default questions to use as fallback if AI fails
     this.defaultQuestions = [
@@ -61,11 +35,7 @@ class GeminiService {
     try {
       return this.genAI.getGenerativeModel({
         model: this.modelName,
-        systemInstruction: `You are a medical assistant helping with patient intake. Generate follow-up questions with multiple-choice options based on the patient information provided. Each question should help gather more medical details relevant to the patient's condition. Return a JSON array where each individual element is an object containing exactly two keys: "question" and "options", where options is an array of strings representing possible answer choices.`,
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: this.schema
-        }
+        // For older versions of the API, we'll rely on prompt engineering instead of schema
       });
     } catch (error) {
       console.error('Error getting Gemini model:', error);
@@ -88,8 +58,10 @@ class GeminiService {
 
       const model = this.getModel();
       
-      // Create prompt with context
+      // Create prompt with context and explicit formatting instructions
       const prompt = `
+        You are a medical assistant helping with patient intake. Generate exactly 3 follow-up questions with 4 multiple-choice options for each question based on the patient information below.
+        
         Patient Information:
         Name: ${patientData.name || 'Unknown'}
         Age: ${patientData.age || 'Unknown'}
@@ -98,7 +70,23 @@ class GeminiService {
         
         ${patientData.responses ? 'Previous responses: ' + JSON.stringify(patientData.responses) : ''}
         
-        Based on this information, generate 3 relevant follow-up questions with 4 multiple-choice options each.
+        The response must be VALID JSON in exactly this format:
+        [
+          {
+            "question": "First question text?",
+            "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
+          },
+          {
+            "question": "Second question text?",
+            "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
+          },
+          {
+            "question": "Third question text?",
+            "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
+          }
+        ]
+        
+        DO NOT include any text before or after the JSON. Only output the JSON array.
       `;
 
       console.log(`Using Gemini model: ${this.modelName}`);
@@ -113,14 +101,27 @@ class GeminiService {
       try {
         const responseText = result.response.text();
         console.log('Gemini raw response:', responseText);
-        const responseJson = JSON.parse(responseText);
+        
+        // Clean up the response to handle possible text prefixes/suffixes
+        const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        const jsonText = jsonMatch ? jsonMatch[0] : responseText;
+        
+        const responseJson = JSON.parse(jsonText);
         
         if (Array.isArray(responseJson) && responseJson.length > 0) {
-          return responseJson;
-        } else {
-          console.warn('Invalid response format from Gemini');
-          return this.defaultQuestions;
+          // Validate the response format
+          const validQuestions = responseJson.filter(q => 
+            q && typeof q.question === 'string' && 
+            Array.isArray(q.options) && q.options.length > 0
+          );
+          
+          if (validQuestions.length > 0) {
+            return validQuestions;
+          }
         }
+        
+        console.warn('Invalid response format from Gemini:', responseJson);
+        return this.defaultQuestions;
       } catch (parseError) {
         console.error('Error parsing JSON from Gemini response:', parseError);
         console.debug('Response that failed to parse:', result.response.text());
