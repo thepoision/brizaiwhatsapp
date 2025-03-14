@@ -8,7 +8,7 @@ class GeminiService {
     // Initialize the Gemini API client
     const apiKey = process.env.GEMINI_API_KEY;
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = 'gemini-1.5-flash'; // Updated model name
+    this.modelName = 'gemini-2.0-flash'; // Using the faster model from the shared example
     
     // Default questions to use as fallback if AI fails
     this.defaultQuestions = [
@@ -33,10 +33,11 @@ class GeminiService {
    */
   getModel() {
     try {
-      return this.genAI.getGenerativeModel({
+      const model = this.genAI.getGenerativeModel({
         model: this.modelName,
-        // For older versions of the API, we'll rely on prompt engineering instead of schema
+        systemInstruction: `You are a Medical AI assistant trained to provide preliminary medical assessments. Your role is to carefully analyze patient information, symptoms, and vital signs and ask the user a series of questions to understand their condition, the questions will contain options to help the user provide accurate information. Return a JSON array where each individual element is an object containing exactly two keys: "question" and "options", where options is an array of strings.`
       });
+      return model;
     } catch (error) {
       console.error('Error getting Gemini model:', error);
       throw new Error('Failed to initialize Gemini AI model');
@@ -60,8 +61,6 @@ class GeminiService {
       
       // Create prompt with context and explicit formatting instructions
       const prompt = `
-        You are a medical assistant helping with patient intake. Generate exactly 3 follow-up questions with 4 multiple-choice options for each question based on the patient information below.
-        
         Patient Information:
         Name: ${patientData.name || 'Unknown'}
         Age: ${patientData.age || 'Unknown'}
@@ -70,7 +69,9 @@ class GeminiService {
         
         ${patientData.responses ? 'Previous responses: ' + JSON.stringify(patientData.responses) : ''}
         
-        The response must be VALID JSON in exactly this format:
+        Based on this information, generate exactly 3 relevant follow-up medical questions. Each question should have 4 multiple-choice options.
+        
+        The response must be in this exact JSON format:
         [
           {
             "question": "First question text?",
@@ -85,8 +86,6 @@ class GeminiService {
             "options": ["Option 1", "Option 2", "Option 3", "Option 4"]
           }
         ]
-        
-        DO NOT include any text before or after the JSON. Only output the JSON array.
       `;
 
       console.log(`Using Gemini model: ${this.modelName}`);
@@ -97,7 +96,7 @@ class GeminiService {
         return this.defaultQuestions;
       }
       
-      // Parse the response - should be direct JSON
+      // Parse the response
       try {
         const responseText = result.response.text();
         console.log('Gemini raw response:', responseText);

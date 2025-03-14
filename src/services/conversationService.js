@@ -373,7 +373,7 @@ class ConversationService {
   async completeConsultation(context) {
     try {
       // Send the patient data to the OPPD system
-      await this.patientService.createPatientConsultation(context.patientData);
+      await this.patientService.savePatientData(context.patientData);
       
       // In a production system, we would clear the conversation after some time
       // For now, we'll keep it for debugging purposes
